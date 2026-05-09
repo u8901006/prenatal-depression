@@ -41,30 +41,55 @@ function getDateDaysAgo(days) {
 
 async function searchPapers(query, retmax) {
   const url = `${PUBMED_SEARCH}?db=pubmed&term=${encodeURIComponent(query)}&retmax=${retmax}&sort=date&retmode=json`;
-  try {
-    const resp = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(30000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    return data?.esearchresult?.idlist ?? [];
-  } catch (e) {
-    console.error(`[ERROR] PubMed search failed: ${e.message}`);
-    return [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const resp = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(30000) });
+      if (resp.status === 429) {
+        console.error(`[WARN] Rate limited on search, waiting ${(attempt + 1) * 3}s...`);
+        await sleep((attempt + 1) * 3000);
+        continue;
+      }
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      return data?.esearchresult?.idlist ?? [];
+    } catch (e) {
+      console.error(`[ERROR] PubMed search failed: ${e.message}`);
+      if (attempt < 2) await sleep(2000);
+    }
   }
+  return [];
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function fetchDetails(pmids) {
   if (!pmids.length) return [];
-  const ids = pmids.join(",");
-  const url = `${PUBMED_FETCH}?db=pubmed&id=${ids}&retmode=xml`;
-  try {
-    const resp = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(60000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const xml = await resp.text();
-    return parseXmlPapers(xml);
-  } catch (e) {
-    console.error(`[ERROR] PubMed fetch failed: ${e.message}`);
-    return [];
+  const batchSize = 20;
+  const allPapers = [];
+  for (let i = 0; i < pmids.length; i += batchSize) {
+    const batch = pmids.slice(i, i + batchSize);
+    const ids = batch.join(",");
+    const url = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${encodeURIComponent(ids)}&retmode=xml`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const resp = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(60000) });
+        if (resp.status === 429) {
+          console.error(`[WARN] Rate limited on fetch, waiting ${(attempt + 1) * 5}s...`);
+          await sleep((attempt + 1) * 5000);
+          continue;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const xml = await resp.text();
+        allPapers.push(...parseXmlPapers(xml));
+        break;
+      } catch (e) {
+        console.error(`[ERROR] PubMed fetch batch ${i / batchSize + 1} failed: ${e.message}`);
+        if (attempt < 2) await sleep(3000);
+      }
+    }
+    if (i + batchSize < pmids.length) await sleep(1500);
   }
+  return allPapers;
 }
 
 function extractText(el, tag) {
@@ -139,10 +164,12 @@ async function main() {
   const allPmids = new Set();
   const perQuery = Math.ceil(opts.maxPapers / SEARCH_QUERIES.length);
 
-  for (const baseQuery of SEARCH_QUERIES) {
+  for (let qi = 0; qi < SEARCH_QUERIES.length; qi++) {
+    const baseQuery = SEARCH_QUERIES[qi];
     const fullQuery = `(${baseQuery}) AND ${dateFilter}`;
     const pmids = await searchPapers(fullQuery, perQuery);
     for (const id of pmids) allPmids.add(id);
+    if (qi < SEARCH_QUERIES.length - 1) await sleep(1500);
   }
 
   const pmidList = [...allPmids].slice(0, opts.maxPapers);
