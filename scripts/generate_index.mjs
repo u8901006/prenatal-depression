@@ -73,7 +73,7 @@ function main() {
     <a href="https://buymeacoffee.com/CYlee" class="link-item" target="_blank" rel="noopener">☕ Buy Me a Coffee</a>
   </div>
   <footer>
-    <p>Powered by PubMed + Zhipu AI · <a href="https://github.com/u8901006/prenatal-depression">GitHub</a></p>
+    <p>Powered by PubMed + NVIDIA Nemotron · <a href="https://github.com/u8901006/prenatal-depression">GitHub</a></p>
   </footer>
 </div>
 </body>

@@ -3,9 +3,9 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
-const API_BASE = process.env.ZHIPU_API_BASE ?? "https://open.bigmodel.cn/api/coding/paas/v4";
-const MODEL_FALLBACK_CHAIN = ["GLM-5-Turbo", "GLM-4.7", "GLM-4.7-Flash"];
-const MAX_TOKENS = 50000;
+const API_BASE = process.env.NVIDIA_API_BASE ?? "https://integrate.api.nvidia.com/v1";
+const MODEL_FALLBACK_CHAIN = ["nvidia/nemotron-3-super-120b-a12b", "nvidia/nemotron-3-nano-30b-a3b"];
+const MAX_TOKENS = 16384;
 const TIMEOUT_MS = 480_000;
 
 const SYSTEM_PROMPT = `你是產前憂鬱症（prenatal depression）領域的資深研究員與科學傳播者。你的任務是：
@@ -35,7 +35,7 @@ const TAG_OPTIONS = [
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const opts = { input: "", output: "", apiKey: process.env.ZHIPU_API_KEY ?? "" };
+  const opts = { input: "", output: "", apiKey: process.env.NVIDIA_API_KEY ?? "" };
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--input" && args[i + 1]) opts.input = args[++i];
     else if (args[i] === "--output" && args[i + 1]) opts.output = args[++i];
@@ -167,9 +167,11 @@ ${papersText}
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: prompt },
           ],
-          temperature: 0.3,
-          top_p: 0.9,
+          temperature: 1.0,
+          top_p: 0.95,
           max_tokens: MAX_TOKENS,
+          stream: false,
+          chat_template_kwargs: { enable_thinking: false },
         };
 
         const resp = await fetch(`${API_BASE}/chat/completions`, {
@@ -393,7 +395,7 @@ function generateHtml(analysis) {
       <div class="header-meta">
         <span class="badge badge-date">📅 ${dateDisplay}</span>
         <span class="badge badge-count">📊 ${total} 篇文獻</span>
-        <span class="badge badge-source">Powered by PubMed + Zhipu AI</span>
+        <span class="badge badge-source">Powered by PubMed + NVIDIA Nemotron</span>
       </div>
     </div>
   </header>
@@ -430,7 +432,7 @@ function generateHtml(analysis) {
   </div>
 
   <footer>
-    <span>資料來源：PubMed &middot; 分析模型：Zhipu AI</span>
+    <span>資料來源：PubMed &middot; 分析模型：NVIDIA Nemotron</span>
     <span><a href="https://github.com/u8901006/prenatal-depression">GitHub</a></span>
   </footer>
 </div>
@@ -442,7 +444,7 @@ async function main() {
   const opts = parseArgs();
 
   if (!opts.apiKey) {
-    console.error("[ERROR] No API key. Set ZHIPU_API_KEY env var or use --api-key");
+    console.error("[ERROR] No API key. Set NVIDIA_API_KEY env var or use --api-key");
     process.exit(1);
   }
   if (!opts.input || !opts.output) {
